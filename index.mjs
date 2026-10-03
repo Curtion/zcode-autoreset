@@ -455,13 +455,22 @@ function hasRunningTask() {
     ["rollout", busyFromRollout],
     ["taskindex", busyFromTaskIndex],
   ];
-  const tried = [];
+  const results = [];
   for (const [name, fn] of sources) {
     const r = fn(sinceMs);
-    if (r) return { ...r, source: name, tried };
-    tried.push(name);
+    if (r) results.push({ name, ...r });
   }
-  return { busy: false, reason: "所有信号源都不可用", source: "none", tried };
+  if (results.length === 0) {
+    return { busy: false, reason: "所有信号源都不可用", source: "none" };
+  }
+  // 关键：多源取或，而不是“遇到第一个可用的就返回”。
+  // heartbeat 读的是 session_target（Goal 模式目标表，普通任务不在里面），会长期 busy=false；
+  // 若就此返回，就永远走不到 rollout 这个通用信号（每个会话一个 model-io-*.jsonl）。
+  const busyOnes = results.filter((r) => r.busy);
+  const detail = results.map((r) => `${r.name}=${r.busy ? "在跑" : "空闲"}(${r.reason})`).join(" ");
+  return busyOnes.length
+    ? { busy: true, source: busyOnes[0].name, reason: detail }
+    : { busy: false, source: results[0].name, reason: detail };
 }
 
 // ---------------------------------------------------------------- 状态持久化

@@ -44,19 +44,23 @@ node index.mjs -h            # 帮助
 （源码注释原话：*"随后到达的 protocol snapshot 可能仍带较旧 running"*）。
 实测确认过：正在跑任务时，`tasks-index.sqlite` 里最新记录可以是 6.8 小时前的。
 
-本服务按优先级用三级信号源：
+本服务同时查三个信号源，**任一源说“在跑”就算在跑（取或）**：
 
-| 优先级 | 信号 | 说明 |
+| 信号 | 说明 | 可靠性 |
 |---|---|---|
-| 1 | `cli/db/db.sqlite` → `session_target.active_run_last_seen_at` | **权威心跳**：有 run 在跑时每几秒刷新；没在跑为 `NULL` |
-| 2 | `cli/rollout/model-io-sess_*.jsonl` 的 mtime | 每会话一个文件，有模型 I/O 就追写 |
-| 3 | `v2/tasks-index.sqlite` 的 `task_status='running'` | 已废弃，仅兼容 |
+| `cli/rollout/model-io-sess_*.jsonl` 的 mtime | 每个会话一个文件，有模型 I/O 就追写 | **最通用** |
+| `cli/db/db.sqlite` → `session_target.active_run_last_seen_at` | Goal 模式的心跳：有 run 时每几秒刷新，没在跑为 `NULL` | ⚠️ **只覆盖 Goal 模式任务**（普通任务不在该表里，会长期为 0） |
+| `v2/tasks-index.sqlite` 的 `task_status='running'` | 协议快照 | ⚠️ 会滞后 |
 
-日志会显示实际用了哪个源，便于排查：
+> ⚠️ **不能“遇到第一个可用的源就返回”**。曾经的 bug 就是：主源 `heartbeat` 读的是
+> `session_target`（Goal 模式目标表），普通任务不在里面 → 它总报空闲 → 于是永远
+> 回退不到 `rollout`，导致“明明有任务在跑却报无任务”。
+
+日志会把**每个源各自的结果**都列出来，一眼就能看出是谁漏了：
 
 ```
-任务 运行中(活跃run=1,源=heartbeat)
-任务 运行中(rollout活跃=1,源=rollout)
+任务 运行中(heartbeat=空闲(活跃run=0) rollout=在跑(rollout活跃=1) taskindex=在跑(running=1),源=rollout)
+任务 空闲(heartbeat=空闲(活跃run=0) rollout=空闲(rollout活跃=0) taskindex=空闲(running=0),源=heartbeat)
 任务 空闲(所有信号源都不可用,源=none)
 ```
 

@@ -1,7 +1,6 @@
 {
   "name": "zcode-autoreset",
   "version": "0.1.0",
-  "private": true,
   "description": "独立的 ZCode / GLM Coding Plan 额度守护服务：额度低于阈值且任务运行中时自动使用重置卡",
   "type": "module",
   "main": "index.mjs",
